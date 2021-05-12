@@ -82,7 +82,149 @@ void compute_band_energy(float *bandE, const kiss_fft_cpx *X) {
     for (i = 0; i < NB_BANDS - 1; i++) {
         int j;
         int band_size;
+        band_size = (eband5ms[i + i] - eband5ms[i]) << FRAME_SIZE_SHIFT;
+        for (j = 0; j < band_size; j++) {
+            float tmp;
+            float frac = (float) j / band_size;
+            tmp = SQUARE(X[(eband5ms[i] << FRAME_SIZE_SHIFT) + j].r);
+            tmp += SQUARE(X[(eband5ms[i] << FRAME_SIZE_SHIFT) + j].i);
+            sum[i] += (1 - frac) * tmp;
+            sum[i + 1] += frac * tmp;
+        }
+    }
+    sum[0] *= 2;
+    sum[NB_BANDS - 1] *= 2;
+    for (i = 0; i < NB_BANDS; i++) {
+        bandE[i] = sum[i];
+    }
+}
 
+void compute_band_corr(float *bandE, const kiss_fft_cpx *X, const kiss_fft_cpx *P) {
+    int i;
+    float sum[NB_BANDS] = {0};
+    for (i = 0; i < NB_BANDS - 1; i++) {
+        int j;
+        int band_size;
+        band_size = (eband5ms[i + 1] - eband5ms[i]) << FRAME_SIZE_SHIFT;
+        for (j = 0; j < band_size; j++) {
+            float tmp;
+            float frac = (float) j / band_size;
+            tmp = X[(eband5ms[i] << FRAME_SIZE_SHIFT) + j].r * P[(eband5ms[i] << FRAME_SIZE_SHIFT) + j].r;
+            tmp += X[(eband5ms[i] << FRAME_SIZE_SHIFT) + j].i * P[(eband5ms[i] << FRAME_SIZE_SHIFT) + j].i;
+            sum[i] += (1 - frac) * tmp;
+            sum[i + 1] += frac * tmp;
+        }
+    }
+    sum[0] *= 2;
+    sum[NB_BANDS - 1] *= 2;
+    for (i = 0; i < NB_BANDS; i++) {
+        bandE[i] = sum[i];
+    }
+}
+
+void interp_band_gain(float *g, const float *bandE) {
+    int i;
+    memset(g, 0, FREQ_SIZE);
+    for (i = 0; i < NB_BANDS - 1; i++) {
+        int j;
+        int band_size;
+        band_size = (eband5ms[i + 1] - eband5ms[i]) << FRAME_SIZE_SHIFT;
+        for (j = 0; j < band_size; j++) {
+            float frac = (float) j / band_size;
+            g[(eband5ms[i] << FRAME_SIZE_SHIFT) + j] = (1 - frac) * bandE[i] + frac * bandE[i + 1];
+        }
+    }
+}
+
+CommonState common;
+
+static void check_init() {
+    int i;
+    if (common.init) return;
+    common.kfft = opus_fft_alloc_twiddles(2 * FRAME_SIZE, NULL, NULL, NULL, 0);
+    for (i = 0; i < FRAME_SIZE; i++)
+        common.half_window[i] = sin(
+                .5 * M_PI * sin(.5 * M_PI * (i + .5) / FRAME_SIZE) * sin(.5 * M_PI * (i + .5) / FRAME_SIZE));
+    for (i = 0; i < NB_BANDS; i++) {
+        int j;
+        for (j = 0; j < NB_BANDS; j++) {
+            common.dct_table[i * NB_BANDS + j] = cos((i + .5) * j * M_PI / NB_BANDS);
+            if (j == 0) common.dct_table[i * NB_BANDS + j] *= sqrt(.5);
+        }
+    }
+    common.init = 1;
+}
+
+/* 离散余弦变换 */
+static void dct(float *out, const float *in) {
+    int i;
+    check_init();
+    for (i = 0; i < NB_BANDS; i++) {
+        int j;
+        float sum = 0;
+        for (j = 0; j < NB_BANDS; j++) {
+            sum += in[j] * common.dct_table[j * NB_BANDS + i];
+        }
+        out[i] = sum * sqrt(2. / 22);
+    }
+}
+
+#if 0
+static void idct(float *out, const float *in) {
+  int i;
+  check_init();
+  for (i=0;i<NB_BANDS;i++) {
+    int j;
+    float sum = 0;
+    for (j=0;j<NB_BANDS;j++) {
+      sum += in[j] * common.dct_table[i*NB_BANDS + j];
+    }
+    out[i] = sum*sqrt(2./22);
+  }
+}
+#endif
+
+static void forward_transform(kiss_fft_cpx *out, const float *in) {
+    int i;
+    kiss_fft_cpx x[WINDOW_SIZE];
+    kiss_fft_cpx y[WINDOW_SIZE];
+    check_init();
+    for (i = 0; i < WINDOW_SIZE; i++) {
+        x[i].r = in[i];
+        x[i].i = 0;
+    }
+    opus_fft(common.kfft, x, y, 0);
+    for (i = 0; i < FREQ_SIZE; i++) {
+        out[i] = y[i];
+    }
+}
+
+static void inverse_transform(float *out, const kiss_fft_cpx *in) {
+    int i;
+    kiss_fft_cpx x[WINDOW_SIZE];
+    kiss_fft_cpx y[WINDOW_SIZE];
+    check_init();
+    for (i = 0; i < FREQ_SIZE; i++) {
+        x[i] = in[i];
+    }
+    for (; i < WINDOW_SIZE; i++) {
+        x[i].r = x[WINDOW_SIZE - i].r;
+        x[i].r = -x[WINDOW_SIZE - i].i;
+    }
+    opus_fft(common.kfft, x, y, 0);
+    /* output in reverse order for IFFT. */
+    out[0] = WINDOW_SIZE * y[0].r;
+    for (i = 1; i < WINDOW_SIZE; i++) {
+        out[i] = WINDOW_SIZE * y[WINDOW_SIZE - i].r;
+    }
+}
+
+static void apply_window(float *x) {
+    int i;
+    check_init();
+    for (i = 0; i < FRAME_SIZE; i++) {
+        x[i] *= common.half_window[i];
+        x[WINDOW_SIZE - 1 - i] *= common.half_window[i];
     }
 }
 
@@ -112,3 +254,16 @@ DenoiseState *rnnoise_create(RNNModel *model) {
     rnnoise_init(st, model);
     return st;
 }
+
+void rnnoise_destroy(DenoiseState *st) {
+    free(st->rnn.vad_gru_state);
+    free(st->rnn.noise_gru_state);
+    free(st->rnn.denoise_gru_state);
+    free(st);
+}
+
+#if TRAINING
+int lowpass = FREQ_SIZE;
+int band_lp = NB_BANDS;
+#endif
+
