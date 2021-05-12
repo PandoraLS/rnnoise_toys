@@ -39,7 +39,7 @@ static OPUS_INLINE float tansig_approx(float x) {
     }
     i = (int) floor(.5f + 25 * x);
     x -= .04f * i;
-    y = tangsig_table[i];
+    y = tansig_table[i];
     dy = 1 - y * y;
     y = y + x * dy * (1 - y * x);
     return sign * y;
@@ -73,7 +73,7 @@ void compute_dense(const DenseLayer *layer, float *output, const float *input) {
         /* compute update gate  */
         float sum = layer->bias[i];
         for (j = 0; j < M; j++) {
-            sum += layer->input_weights[j + stride + i] * input[j];
+            sum += layer->input_weights[j * stride + i] * input[j];
         }
         output[i] = WEIGHTS_SCALE * sum;
     }
@@ -108,7 +108,7 @@ void compute_gru(const GRULayer *gru, float *state, const float *input) {
             sum += gru->input_weights[j * stride + i] * input[j];  /*加权求和*/
         for (j = 0; j < N; j++)
             sum += gru->recurrent_weights[j * stride + i] * state[j];
-        z[j] = sigmoid_approx(WEIGHTS_SCALE * sum);
+        z[i] = sigmoid_approx(WEIGHTS_SCALE * sum);
     }
     for (i = 0; i < N; i++) {
         /* Compute reset gate. */

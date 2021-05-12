@@ -41,7 +41,7 @@ void compute_dense(const DenseLayer *layer, float *output, const float *input);
 
 void compute_gru(const GRULayer *gru, float *state, const float *input);
 
-void compute_rnn(struct RNNState *rnn, float *gains, float *vad, const float *input);
+void compute_rnn(RNNState *rnn, float *gains, float *vad, const float *input);
 
 
 #endif //RNNOISE_TOYS_RNN_H

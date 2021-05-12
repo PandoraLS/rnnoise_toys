@@ -7,3 +7,7 @@
 
 只需要抄神经网络相关的代码即可
 
+调试命令
+```shell
+rnnoise_toys D:\code\rnnoise_toys\denoise_examples\61-70968-0001_db20_babble-48k.pcm D:\code\rnnoise_toys\denoise_examples\61-70968-0001_db20_babble-48k-denoise.pcm
+```
