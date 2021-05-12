@@ -21,6 +21,9 @@ struct RNNModel {
     const GRULayer *denoise_gru;
 
     int denoise_output_size;
+    const DenseLayer *denoise_output;
+
+    int vad_output_size;
     const DenseLayer *vad_output;
 };
 

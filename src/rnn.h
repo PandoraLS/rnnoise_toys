@@ -8,6 +8,14 @@
 #include "rnnoise.h"
 #include "opus_types.h"
 
+#define WEIGHTS_SCALE (1.f/256)
+
+#define MAX_NEURONS 128
+
+#define ACTIVATION_TANH    0
+#define ACTIVATION_SIGMOID 1
+#define ACTIVATION_RELU    2
+
 typedef signed char rnn_weight;
 
 typedef struct {
