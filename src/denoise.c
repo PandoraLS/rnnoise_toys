@@ -17,13 +17,13 @@
 
 #define FRAME_SIZE_SHIFT 2
 #define FRAME_SIZE (120<<FRAME_SIZE_SHIFT) /* FRAME_SIZE = 480 */
-#define WINDOW_SIZE (2*FRAME_SIZE)
-#define FREQ_SIZE (FRAME_SIZE + 1)
+#define WINDOW_SIZE (2*FRAME_SIZE) // WINDOW_SIZE = 960 正好一帧
+#define FREQ_SIZE (FRAME_SIZE + 1) // FREQ_SIZE = 481
 
 #define PITCH_MIN_PERIOD 60
 #define PITCH_MAX_PERIOD 768
 #define PITCH_FRAME_SIZE 960
-#define PITCH_BUF_SIZE (PITCH_MAX_PERIOD + PITCH_FRAME_SIZE)
+#define PITCH_BUF_SIZE (PITCH_MAX_PERIOD + PITCH_FRAME_SIZE) // PITCH_BUF_SIZE = 1728
 
 #define SQUARE(x) ((x)*(x))
 
@@ -368,6 +368,7 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
         spec_variability += mindist;
     }
     features[NB_BANDS + 3 * NB_DELTA_CEPS + 1] = spec_variability / CEPS_MEM - 2.1;
+
     return TRAINING && E < 0.1;
 }
 
@@ -380,6 +381,7 @@ static void frame_synthesis(DenoiseState *st, float *out, const kiss_fft_cpx *y)
     RNN_COPY(st->synthesis_mem, &x[FRAME_SIZE], FRAME_SIZE);
 }
 
+// 双二阶滤波器  无限脉冲响应滤波器 IIR
 static void biquad(float *y, float mem[2], const float *x, const float *b, const float *a, int N) {
     int i;
     for (i = 0; i < N; i++) {
@@ -449,7 +451,7 @@ float rnnoise_process_frame(DenoiseState *st, float *out, const float *in) {
     int silence;
     static const float a_hp[2] = {-1.99599, 0.99600};
     static const float b_hp[2] = {-2, 1};
-    biquad(x, st->mem_hp_x, in, b_hp, a_hp, FRAME_SIZE);
+    biquad(x, st->mem_hp_x, in, b_hp, a_hp, FRAME_SIZE); // high pass 高通滤波
     silence = compute_frame_features(st, X, P, Ex, Ep, Exp, features, x);
 
     if (!silence) {
