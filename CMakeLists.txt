@@ -25,4 +25,6 @@ add_executable(rnnoise_toys
         src/rnn_data.h
         src/rnn_reader.c
         src/tansig_table.h
-        src/denoise.c)
+        src/denoise.c
+        src/utils.c
+        src/utils.h)

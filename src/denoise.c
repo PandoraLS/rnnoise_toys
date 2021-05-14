@@ -2,6 +2,8 @@
 // Created by aone on 2021/5/10.
 //
 
+#define SEENLI_DEBUG
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -368,6 +370,21 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
         spec_variability += mindist;
     }
     features[NB_BANDS + 3 * NB_DELTA_CEPS + 1] = spec_variability / CEPS_MEM - 2.1;
+
+#ifdef SEENLI_DEBUG
+//    printf("hello world");
+    FILE *fp_feature;
+    fp_feature = fopen("origin_feature.txt","a+");
+    if (fp_feature == NULL) {
+        printf("origin_feature.txt failed to open. \n");
+    } else {
+//        fprintf(fp_feature, "hello world \n");
+        for (int feature_i = 0; feature_i < NB_FEATURES; feature_i++) {
+            fprintf(fp_feature, "%8.3f\t", features[feature_i]);
+        }
+        fprintf(fp_feature, "\n");
+    }
+#endif
 
     return TRAINING && E < 0.1;
 }
