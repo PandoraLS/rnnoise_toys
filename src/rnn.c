@@ -140,7 +140,7 @@ void compute_gru(const GRULayer *gru, float *state, const float *input) {
 /*!
  *
  * @param rnn
- * @param gains
+ * @param gains 每个频带的增益 gain = sqrt(Energy(clean speech) / Energy(noisy speech)); 即 idea ratio mask(IRM)
  * @param vad
  * @param input
  */

@@ -10,9 +10,8 @@
 
 #define SEENLI_DEBUG
 
-int main(int argc, char **argv) {
-
-#ifdef SEENLI_DEBUG
+// 由于files使用的是追加形式，所以每次运行之前都需要检查对应的文件是否存在，如果存在则删除对应的file
+void checkfiles_exists() {
     // 由于origin_feature.txt保存的时候是 追加模式，所以如果事先有 origin_feature.txt 就先删除了
     if (cfileexists("origin_feature.txt")) {
 //        printf("origin_feature.txt file exists. \n");
@@ -22,6 +21,32 @@ int main(int argc, char **argv) {
             *(int *) 0 = 0; /* 向地址0000处写入一个0，从而触发一个访问违例异常 */
         }
     }
+    if (cfileexists("rnn_gains.txt")) { // 判断rnn_gains.txt是否已经存在
+        int del = remove("rnn_gains.txt");
+        if (del) { // 删除失败
+            printf("rnn_gains.txt is not Deleted \n");
+            *(int *) 0 = 0; /* 向地址0000处写入一个0，从而触发一个访问违例异常 */
+        }
+    }
+    if (cfileexists("pitch_filter_gains.txt")) { // 判断对应的txt是否已经存在
+        int del = remove("pitch_filter_gains.txt");
+        if (del) { // 删除失败
+            printf("pitch_filter_gains.txt is not Deleted \n");
+            *(int *) 0 = 0; /* 向地址0000处写入一个0，从而触发一个访问违例异常 */
+        }
+    }
+    if (cfileexists("vad.txt")) { // 判断gains.txt是否已经存在
+        int del = remove("vad.txt");
+        if (del) { // 删除失败
+            printf("vad.txt is not Deleted \n");
+            *(int *) 0 = 0; /* 向地址0000处写入一个0，从而触发一个访问违例异常 */
+        }
+    }
+}
+
+int main(int argc, char **argv) {
+#ifdef SEENLI_DEBUG
+    checkfiles_exists();
 #endif
     int i;
     int first = 1; // 标记是否是第一帧pcm
@@ -47,20 +72,6 @@ int main(int argc, char **argv) {
         // 一帧480个采样点,每个采样点short类型的2字节，少的一帧就是960字节
         first = 0;
     }
-
-
-
-
-
-
-//    FILE *fp_feature;
-//    fp_feature = fopen("origin_feature.txt","a+");
-//    if (fp_feature == NULL) {
-//        printf("origin_feature.txt failed to open. \n");
-//    } else {
-//        fprintf(fp_feature, "rnnoise demo \n");
-//    }
-
     rnnoise_destroy(st);
     fclose(f1);
     fclose(fout);

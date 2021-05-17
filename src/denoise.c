@@ -73,7 +73,7 @@ struct DenoiseState {
     float pitch_enh_buf[PITCH_BUF_SIZE];
     float last_gain;
     int last_period;
-    float mem_hp_x[2];
+    float mem_hp_x[2]; // 计算biquad的中间过程
     float lastg[NB_BANDS];
     RNNState rnn;
 };
@@ -269,7 +269,13 @@ int lowpass = FREQ_SIZE;
 int band_lp = NB_BANDS;
 #endif
 
-
+/*!
+ *
+ * @param st
+ * @param X 输入信号傅里叶变换得到的复数 数组长度 FREQ_SIZE = 481
+ * @param Ex
+ * @param in
+ */
 static void frame_analysis(DenoiseState *st, kiss_fft_cpx *X, float *Ex, const float *in) {
     int i;
     float x[WINDOW_SIZE];
@@ -285,6 +291,18 @@ static void frame_analysis(DenoiseState *st, kiss_fft_cpx *X, float *Ex, const f
     compute_band_energy(Ex, X);
 }
 
+/*!
+ * 计算单帧的特征
+ * @param st DenoiseState结构体
+ * @param X
+ * @param P
+ * @param Ex
+ * @param Ep
+ * @param Exp
+ * @param features
+ * @param in
+ * @return
+ */
 static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cpx *P,
                                   float *Ex, float *Ep, float *Exp, float *features, const float *in) {
     int i;
@@ -320,10 +338,10 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
     compute_band_corr(Exp, X, P);
     for (i = 0; i < NB_BANDS; i++) Exp[i] = Exp[i] / sqrt(.001 + Ex[i] * Ep[i]);
     dct(tmp, Exp);
-    for (i = 0; i < NB_DELTA_CEPS; i++) features[NB_BANDS + 2 * NB_DELTA_CEPS + i] = tmp[i];
-    features[NB_BANDS + 2 * NB_DELTA_CEPS] -= 1.3;
-    features[NB_BANDS + 2 * NB_DELTA_CEPS + 1] -= 0.9;
-    features[NB_BANDS + 3 * NB_DELTA_CEPS] = .01 * (pitch_index - 300);
+    for (i = 0; i < NB_DELTA_CEPS; i++) features[NB_BANDS + 2 * NB_DELTA_CEPS + i] = tmp[i]; // features[34,40)
+    features[NB_BANDS + 2 * NB_DELTA_CEPS] -= 1.3; // features[34]
+    features[NB_BANDS + 2 * NB_DELTA_CEPS + 1] -= 0.9; // features[35]
+    features[NB_BANDS + 3 * NB_DELTA_CEPS] = .01 * (pitch_index - 300); // features[40]
     logMax = -2;
     follow = -2;
     for (i = 0; i < NB_BANDS; i++) {
@@ -338,7 +356,7 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
         RNN_CLEAR(features, NB_FEATURES);
         return 1;
     }
-    dct(features, Ly);
+    dct(features, Ly);      // 计算features
     features[0] -= 12;
     features[1] -= 4;
     ceps_0 = st->cepstral_mem[st->memid];
@@ -347,9 +365,10 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
     for (i = 0; i < NB_BANDS; i++) ceps_0[i] = features[i];
     st->memid++;
     for (i = 0; i < NB_DELTA_CEPS; i++) {
-        features[i] = ceps_0[i] + ceps_1[i] + ceps_2[i];
-        features[NB_BANDS + i] = ceps_0[i] - ceps_2[i];
-        features[NB_BANDS + NB_DELTA_CEPS + i] = ceps_0[i] - 2 * ceps_1[i] + ceps_2[i];
+        features[i] = ceps_0[i] + ceps_1[i] + ceps_2[i]; // features[0,6)
+        features[NB_BANDS + i] = ceps_0[i] - ceps_2[i];  // features[22,28) 倒谱系数
+        features[NB_BANDS + NB_DELTA_CEPS + i] = ceps_0[i] - 2 * ceps_1[i] + ceps_2[i]; // features[28, 34] 二阶系数
+        // ceps_0[i] - 2 * ceps_1[i] + ceps_2[i] = (ceps_0[i] - ceps_1[i]) - (ceps_1[i] - ceps_2[i]) = 二阶系数
     }
     /* Spectral variability features. */
     if (st->memid == CEPS_MEM) st->memid = 0;
@@ -369,22 +388,7 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
         }
         spec_variability += mindist;
     }
-    features[NB_BANDS + 3 * NB_DELTA_CEPS + 1] = spec_variability / CEPS_MEM - 2.1;
-
-#ifdef SEENLI_DEBUG
-//    printf("hello world");
-    FILE *fp_feature;
-    fp_feature = fopen("origin_feature.txt","a+");
-    if (fp_feature == NULL) {
-        printf("origin_feature.txt failed to open. \n");
-    } else {
-//        fprintf(fp_feature, "hello world \n");
-        for (int feature_i = 0; feature_i < NB_FEATURES; feature_i++) {
-            fprintf(fp_feature, "%8.3f\t", features[feature_i]);
-        }
-        fprintf(fp_feature, "\n");
-    }
-#endif
+    features[NB_BANDS + 3 * NB_DELTA_CEPS + 1] = spec_variability / CEPS_MEM - 2.1; // features[41] 特殊的非平稳值,用于检测语音
 
     return TRAINING && E < 0.1;
 }
@@ -398,7 +402,18 @@ static void frame_synthesis(DenoiseState *st, float *out, const kiss_fft_cpx *y)
     RNN_COPY(st->synthesis_mem, &x[FRAME_SIZE], FRAME_SIZE);
 }
 
-// 双二阶滤波器  无限脉冲响应滤波器 IIR
+/*!
+ * 二阶滤波器 无限脉冲响应滤波器 IIR ref:https://arachnoid.com/BiQuadDesigner/index.html
+ * Biquadractic Filter求解如下：
+ * y(n) = x(n) + b0*x(n-1) + b1*x(n-2) - a0*y(n-1) - a1*y(n-2) // 实际上x(n)的系数为1
+ * @param y 滤波后时域信号
+ * @param mem 计算biquad的中间过程 mem[1] = b1*x(n-2) - a1*y(n-2)
+ * mem[0] = b1*x(n-2) - a1*y(n-2) + b0*x(n-1) - a0*y(n-1)
+ * @param x 待滤波的时域信号
+ * @param b 系数b
+ * @param a 系数a
+ * @param N N点信号滤波
+ */
 static void biquad(float *y, float mem[2], const float *x, const float *b, const float *a, int N) {
     int i;
     for (i = 0; i < N; i++) {
@@ -449,7 +464,7 @@ void pitch_filter(kiss_fft_cpx *X, const kiss_fft_cpx *P, const float *Ex, const
 
 /*!
  *
- * @param st
+ * @param st DenoiseState结构体
  * @param out 输出帧
  * @param in 输入帧
  * @return
@@ -468,17 +483,61 @@ float rnnoise_process_frame(DenoiseState *st, float *out, const float *in) {
     int silence;
     static const float a_hp[2] = {-1.99599, 0.99600};
     static const float b_hp[2] = {-2, 1};
-    biquad(x, st->mem_hp_x, in, b_hp, a_hp, FRAME_SIZE); // high pass 高通滤波
+    biquad(x, st->mem_hp_x, in, b_hp, a_hp, FRAME_SIZE); // high pass 高通滤波 抑制50Hz或60Hz的电源干扰
     silence = compute_frame_features(st, X, P, Ex, Ep, Exp, features, x);
 
-    if (!silence) {
+#ifdef SEENLI_DEBUG
+    FILE *fp_feature;
+    fp_feature = fopen("origin_feature.txt","a+");
+    if (fp_feature == NULL) {printf("origin_feature.txt failed to open. \n");}
+    else {
+        for (int feature_i = 0; feature_i < NB_FEATURES; feature_i++)
+            fprintf(fp_feature, "%8.3f", features[feature_i]);
+        fprintf(fp_feature, "\n");
+    }
+    fclose(fp_feature);
+#endif
+
+    if (!silence) { // 非静音帧
         compute_rnn(&st->rnn, g, &vad_prob, features);
+
+#ifdef SEENLI_DEBUG
+    FILE *fp_rnn_gain;
+    fp_rnn_gain = fopen("rnn_gains.txt", "a+");
+    if (fp_rnn_gain == NULL) {printf("rnn_gains.txt filed to open. \n");}
+    else {
+        for (int gain_i = 0; gain_i < NB_BANDS; gain_i++)
+            fprintf(fp_rnn_gain, "%8.3f", g[gain_i]);
+        fprintf(fp_feature, "\n");
+    }
+    fclose(fp_rnn_gain);
+
+    FILE *fp_vad;
+    fp_vad = fopen("vad.txt", "a+");
+    if (fp_vad == NULL) {printf("vad.txt filed to open. \n");}
+    else {
+        fprintf(fp_vad, "%.3f\n", vad_prob);
+    }
+    fclose(fp_vad);
+#endif
+
         pitch_filter(X, P, Ex, Ep, Exp, g);
         for (i = 0; i < NB_BANDS; i++) {
             float alpha = .6f;
             g[i] = MAX16(g[i], alpha * st->lastg[i]);
             st->lastg[i] = g[i];
         }
+#ifdef SEENLI_DEBUG
+        FILE *fp_filter_gain;
+        fp_filter_gain = fopen("pitch_filter_gains.txt", "a+");
+        if (fp_filter_gain == NULL) {printf("pitch_filter_gains.txt filed to open. \n");}
+        else {
+            for (int gain_i = 0; gain_i < NB_BANDS; gain_i++)
+                fprintf(fp_filter_gain, "%8.3f", g[gain_i]);
+            fprintf(fp_feature, "\n");
+        }
+        fclose(fp_filter_gain);
+#endif
         interp_band_gain(gf, g);
 #if 1
         for (i = 0; i < FREQ_SIZE; i++) {
@@ -487,6 +546,28 @@ float rnnoise_process_frame(DenoiseState *st, float *out, const float *in) {
         }
 #endif
     }
+#ifdef SEENLI_DEBUG
+    else { // 静音帧，实际在测试61-70968-0001_db20_babble-48k.pcm时没有静音帧
+        printf("进入静音帧...\n");
+        FILE *fp_gain;
+        fp_gain = fopen("gains.txt", "a+");
+        if (fp_gain == NULL) {printf("gains.txt filed to open. \n");}
+        else {
+            for (int gain_i = 0; gain_i < NB_BANDS; gain_i++)
+                fprintf(fp_gain, "%8.3f", .0); // 静音帧用0来填充gains
+            fprintf(fp_feature, "\n");
+        }
+        fclose(fp_gain);
+
+        FILE *fp_vad;
+        fp_vad = fopen("vad.txt", "a+");
+        if (fp_vad == NULL) {printf("vad.txt filed to open. \n");}
+        else {
+            fprintf(fp_vad, "%.3f\n", .0); // 静音帧用0来填充vad
+        }
+        fclose(fp_vad);
+    }
+#endif
 
     frame_synthesis(st, out, X);
     return vad_prob;

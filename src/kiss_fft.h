@@ -69,7 +69,7 @@ extern "C" {
 typedef struct {
     kiss_fft_scalar r;
     kiss_fft_scalar i;
-} kiss_fft_cpx;
+} kiss_fft_cpx; // fft_complex
 
 typedef struct {
     kiss_twiddle_scalar r;
