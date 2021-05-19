@@ -65,7 +65,7 @@ typedef struct {
 } CommonState;
 
 struct DenoiseState {
-    float analysis_mem[FRAME_SIZE];
+    float analysis_mem[FRAME_SIZE]; // frame_analysis的缓存
     float cepstral_mem[CEPS_MEM][NB_BANDS];
     int memid;
     float synthesis_mem[FRAME_SIZE];
@@ -78,29 +78,40 @@ struct DenoiseState {
     RNNState rnn;
 };
 
+/*!
+ * 计算各频带能量(共22个频带)
+ * @param bandE 表示bandEnergy 对应数组长度 NB_BANDS=22
+ * @param X 信号x计算得到的FFT复数
+ */
 void compute_band_energy(float *bandE, const kiss_fft_cpx *X) {
     int i;
-    float sum[NB_BANDS] = {0};;
+    float sum[NB_BANDS] = {0};
     for (i = 0; i < NB_BANDS - 1; i++) {
         int j;
         int band_size;
-        band_size = (eband5ms[i + 1] - eband5ms[i]) << FRAME_SIZE_SHIFT;
+        band_size = (eband5ms[i + 1] - eband5ms[i]) << FRAME_SIZE_SHIFT; // 带宽size
         for (j = 0; j < band_size; j++) {
             float tmp;
-            float frac = (float) j / band_size;
-            tmp = SQUARE(X[(eband5ms[i] << FRAME_SIZE_SHIFT) + j].r);
-            tmp += SQUARE(X[(eband5ms[i] << FRAME_SIZE_SHIFT) + j].i);
-            sum[i] += (1 - frac) * tmp;
+            float frac = (float) j / band_size; // 平滑滤波
+            tmp = SQUARE(X[(eband5ms[i] << FRAME_SIZE_SHIFT) + j].r);  // 计算实部平方
+            tmp += SQUARE(X[(eband5ms[i] << FRAME_SIZE_SHIFT) + j].i); // 计算虚部平方
+            sum[i] += (1 - frac) * tmp; // 实际上这里每个sum[i]都计算了两遍(除了最初的和末尾的)
             sum[i + 1] += frac * tmp;
         }
     }
-    sum[0] *= 2;
-    sum[NB_BANDS - 1] *= 2;
+    sum[0] *= 2; // sum[0]没有计算两遍，这里需要补上
+    sum[NB_BANDS - 1] *= 2; // sum[NB_BANDS-1]没有计算两遍，这里需要补上
     for (i = 0; i < NB_BANDS; i++) {
         bandE[i] = sum[i];
     }
 }
 
+/*!
+ * 计算相关系数
+ * @param bandE
+ * @param X 傅里叶变换系数
+ * @param P 基音周期pitch傅里叶变换系数
+ */
 void compute_band_corr(float *bandE, const kiss_fft_cpx *X, const kiss_fft_cpx *P) {
     int i;
     float sum[NB_BANDS] = {0};
@@ -124,6 +135,11 @@ void compute_band_corr(float *bandE, const kiss_fft_cpx *X, const kiss_fft_cpx *
     }
 }
 
+/*!
+ * 插值增益
+ * @param g 插值后增益
+ * @param bandE 原始能量系数
+ */
 void interp_band_gain(float *g, const float *bandE) {
     int i;
     memset(g, 0, FREQ_SIZE);
@@ -157,7 +173,11 @@ static void check_init() {
     common.init = 1;
 }
 
-/* 离散余弦变换 */
+/*!
+ * 离散余弦变换
+ * @param out 输出变换后系数
+ * @param in 输入信号
+ */
 static void dct(float *out, const float *in) {
     int i;
     check_init();
@@ -186,6 +206,11 @@ static void idct(float *out, const float *in) {
 }
 #endif
 
+/*!
+ * 信号的傅里叶变换计算
+ * @param out FFT变换后系数
+ * @param in 加窗后的信号 2帧
+ */
 static void forward_transform(kiss_fft_cpx *out, const float *in) {
     int i;
     kiss_fft_cpx x[WINDOW_SIZE];
@@ -201,6 +226,11 @@ static void forward_transform(kiss_fft_cpx *out, const float *in) {
     }
 }
 
+/*!
+ * 信号的逆傅里叶变换计算
+ * @param out 逆序的输出IFFT结果
+ * @param in 傅里叶变换后的系数
+ */
 static void inverse_transform(float *out, const kiss_fft_cpx *in) {
     int i;
     kiss_fft_cpx x[WINDOW_SIZE];
@@ -220,7 +250,10 @@ static void inverse_transform(float *out, const kiss_fft_cpx *in) {
         out[i] = WINDOW_SIZE * y[WINDOW_SIZE - i].r;
     }
 }
-
+/*!
+ * 每次对2帧信号加窗
+ * @param x 加窗后的信号依然写入到x中
+ */
 static void apply_window(float *x) {
     int i;
     check_init();
@@ -270,38 +303,41 @@ int band_lp = NB_BANDS;
 #endif
 
 /*!
- *
- * @param st
+ * 得到信号傅里叶系数及频带能量
+ * @param st DenoiseState结构体
  * @param X 输入信号傅里叶变换得到的复数 数组长度 FREQ_SIZE = 481
- * @param Ex
- * @param in
+ * @param Ex 此帧各频带能量 数组长度 NB_BANDS = 22
+ * @param in 抑制电源干扰后的信号帧 数组长度 FRAME_SIZE = 480
  */
 static void frame_analysis(DenoiseState *st, kiss_fft_cpx *X, float *Ex, const float *in) {
     int i;
-    float x[WINDOW_SIZE];
+    float x[WINDOW_SIZE]; // 两帧 size=960
+
+    // 两个RNN_COPY实现了滑动窗口
     RNN_COPY(x, st->analysis_mem, FRAME_SIZE);
     for (i = 0; i < FRAME_SIZE; i++) x[FRAME_SIZE + i] = in[i];
     RNN_COPY(st->analysis_mem, in, FRAME_SIZE);
-    apply_window(x);
-    forward_transform(X, x);
+
+    apply_window(x); // 加窗后的x
+    forward_transform(X, x); // X是x傅里叶变换后的系数
 #if TRAINING
     for (i=lowpass;i<FREQ_SIZE;i++)
       X[i].r = X[i].i = 0;
 #endif
-    compute_band_energy(Ex, X);
+    compute_band_energy(Ex, X); // 计算该帧各频带的能量
 }
 
 /*!
  * 计算单帧的特征
  * @param st DenoiseState结构体
- * @param X
- * @param P
- * @param Ex
- * @param Ep
- * @param Exp
- * @param features
- * @param in
- * @return
+ * @param X 输入信号x傅里叶变换后的系数
+ * @param P 基音周期pitch傅里叶变换系数
+ * @param Ex 此帧各频带能量 数组长度 NB_BANDS = 22
+ * @param Ep 基音周期pitch的频带能量计算
+ * @param Exp 计算pitch时的相关系数
+ * @param features 各特征系数
+ * @param in 输入的单帧信号 数组长度 FRAME_SIZE=480
+ * @return 是否静音帧
  */
 static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cpx *P,
                                   float *Ex, float *Ep, float *Exp, float *features, const float *in) {
@@ -317,10 +353,11 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
     float *(pre[1]);
     float tmp[NB_BANDS];
     float follow, logMax;
-    frame_analysis(st, X, Ex, in);
+    frame_analysis(st, X, Ex, in); // 得到该帧in的傅里叶系数X和各频带能量Ex
     RNN_MOVE(st->pitch_buf, &st->pitch_buf[FRAME_SIZE], PITCH_BUF_SIZE - FRAME_SIZE);
     RNN_COPY(&st->pitch_buf[PITCH_BUF_SIZE - FRAME_SIZE], in, FRAME_SIZE);
     pre[0] = &st->pitch_buf[0];
+    // pitch估计方法来自opus 中的 pitch.c
     pitch_downsample(pre, pitch_buf, PITCH_BUF_SIZE, 1);
     pitch_search(pitch_buf + (PITCH_MAX_PERIOD >> 1), pitch_buf, PITCH_FRAME_SIZE,
                  PITCH_MAX_PERIOD - 3 * PITCH_MIN_PERIOD, &pitch_index);
@@ -335,7 +372,7 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
     apply_window(p);
     forward_transform(P, p);
     compute_band_energy(Ep, P);
-    compute_band_corr(Exp, X, P);
+    compute_band_corr(Exp, X, P); // 计算X和P的相关系数
     for (i = 0; i < NB_BANDS; i++) Exp[i] = Exp[i] / sqrt(.001 + Ex[i] * Ep[i]);
     dct(tmp, Exp);
     for (i = 0; i < NB_DELTA_CEPS; i++) features[NB_BANDS + 2 * NB_DELTA_CEPS + i] = tmp[i]; // features[34,40)
@@ -393,6 +430,12 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
     return TRAINING && E < 0.1;
 }
 
+/*!
+ * 语音帧合成
+ * @param st DenoiseState结构体
+ * @param out 合成的语音帧
+ * @param y 该帧的傅里叶变换系数
+ */
 static void frame_synthesis(DenoiseState *st, float *out, const kiss_fft_cpx *y) {
     float x[WINDOW_SIZE];
     int i;
@@ -426,6 +469,15 @@ static void biquad(float *y, float mem[2], const float *x, const float *b, const
     }
 }
 
+/*!
+ * 用于过滤pitch谐波之间的噪声
+ * @param X 信号帧的傅里叶变换系数
+ * @param P 基音周期pitch傅里叶变换系数
+ * @param Ex 此帧各频带能量 数组长度 NB_BANDS = 22
+ * @param Ep 基音周期pitch的频带能量计算
+ * @param Exp 计算pitch时的相关系数
+ * @param g 每个频带的增益 gain = sqrt(Energy(clean speech) / Energy(noisy speech)); 即 idea ratio mask(IRM)
+ */
 void pitch_filter(kiss_fft_cpx *X, const kiss_fft_cpx *P, const float *Ex, const float *Ep,
                   const float *Exp, const float *g) {
     int i;
@@ -465,9 +517,9 @@ void pitch_filter(kiss_fft_cpx *X, const kiss_fft_cpx *P, const float *Ex, const
 /*!
  *
  * @param st DenoiseState结构体
- * @param out 输出帧
- * @param in 输入帧
- * @return
+ * @param out 输出帧数据
+ * @param in 输入帧数据
+ * @return vad_prob 语音活动检测范围(0,1), 0表示无话音
  */
 float rnnoise_process_frame(DenoiseState *st, float *out, const float *in) {
     int i;

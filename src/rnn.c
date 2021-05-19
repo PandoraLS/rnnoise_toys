@@ -139,19 +139,23 @@ void compute_gru(const GRULayer *gru, float *state, const float *input) {
 #define INPUT_SIZE 42
 /*!
  *
- * @param rnn
+ * @param rnn 结构体RNNState
  * @param gains 每个频带的增益 gain = sqrt(Energy(clean speech) / Energy(noisy speech)); 即 idea ratio mask(IRM)
- * @param vad
- * @param input
+ * @param vad 语音活动检测
+ * @param input 特征(42维)
  */
 void compute_rnn(RNNState *rnn, float *gains, float *vad, const float *input) {
     int i;
     float dense_out[MAX_NEURONS];
     float noise_input[MAX_NEURONS * 3];
     float denoise_input[MAX_NEURONS * 3];
+
+    // 获得 vad output
     compute_dense(rnn->model->input_dense, dense_out, input);
     compute_gru(rnn->model->vad_gru, rnn->vad_gru_state, dense_out);
     compute_dense(rnn->model->vad_output, vad, rnn->vad_gru_state);
+
+    // noise_input[0, 24) = dense_out 对应Architecture左侧的Dense tanh(24)
     for (i = 0; i < rnn->model->input_dense_size; i++) noise_input[i] = dense_out[i];
     for (i = 0; i < rnn->model->vad_gru_size; i++)
         noise_input[i + rnn->model->input_dense_size] = rnn->vad_gru_state[i];
