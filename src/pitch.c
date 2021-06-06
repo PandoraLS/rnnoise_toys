@@ -409,7 +409,7 @@ opus_val16 remove_doubling(opus_val16 *x, int maxperiod, int minperiod,
                            int N, int *T0_, int prev_period, opus_val16 prev_gain) {
     int k, i, T, T0;
     opus_val16 g, g0;
-    opus_val16 pg;
+    opus_val16 pg; // pitch gain
     opus_val32 xy, xx, yy, xy2;
     opus_val32 xcorr[3];
     opus_val32 best_xy, best_yy;

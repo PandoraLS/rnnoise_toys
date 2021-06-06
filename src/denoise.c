@@ -2,6 +2,8 @@
 // Created by aone on 2021/5/10.
 //
 
+#define SEENLI_DEBUG
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -17,13 +19,13 @@
 
 #define FRAME_SIZE_SHIFT 2
 #define FRAME_SIZE (120<<FRAME_SIZE_SHIFT) /* FRAME_SIZE = 480 */
-#define WINDOW_SIZE (2*FRAME_SIZE)
-#define FREQ_SIZE (FRAME_SIZE + 1)
+#define WINDOW_SIZE (2*FRAME_SIZE) // WINDOW_SIZE = 960 正好一帧
+#define FREQ_SIZE (FRAME_SIZE + 1) // FREQ_SIZE = 481
 
 #define PITCH_MIN_PERIOD 60
 #define PITCH_MAX_PERIOD 768
 #define PITCH_FRAME_SIZE 960
-#define PITCH_BUF_SIZE (PITCH_MAX_PERIOD + PITCH_FRAME_SIZE)
+#define PITCH_BUF_SIZE (PITCH_MAX_PERIOD + PITCH_FRAME_SIZE) // PITCH_BUF_SIZE = 1728
 
 #define SQUARE(x) ((x)*(x))
 
@@ -63,7 +65,7 @@ typedef struct {
 } CommonState;
 
 struct DenoiseState {
-    float analysis_mem[FRAME_SIZE];
+    float analysis_mem[FRAME_SIZE]; // frame_analysis的缓存
     float cepstral_mem[CEPS_MEM][NB_BANDS];
     int memid;
     float synthesis_mem[FRAME_SIZE];
@@ -71,34 +73,45 @@ struct DenoiseState {
     float pitch_enh_buf[PITCH_BUF_SIZE];
     float last_gain;
     int last_period;
-    float mem_hp_x[2];
+    float mem_hp_x[2]; // 计算biquad的中间过程
     float lastg[NB_BANDS];
     RNNState rnn;
 };
 
+/*!
+ * 计算各频带能量(共22个频带)
+ * @param bandE 表示bandEnergy 对应数组长度 NB_BANDS=22
+ * @param X 信号x计算得到的FFT复数
+ */
 void compute_band_energy(float *bandE, const kiss_fft_cpx *X) {
     int i;
-    float sum[NB_BANDS] = {0};;
+    float sum[NB_BANDS] = {0};
     for (i = 0; i < NB_BANDS - 1; i++) {
         int j;
         int band_size;
-        band_size = (eband5ms[i + 1] - eband5ms[i]) << FRAME_SIZE_SHIFT;
+        band_size = (eband5ms[i + 1] - eband5ms[i]) << FRAME_SIZE_SHIFT; // 带宽size
         for (j = 0; j < band_size; j++) {
             float tmp;
-            float frac = (float) j / band_size;
-            tmp = SQUARE(X[(eband5ms[i] << FRAME_SIZE_SHIFT) + j].r);
-            tmp += SQUARE(X[(eband5ms[i] << FRAME_SIZE_SHIFT) + j].i);
-            sum[i] += (1 - frac) * tmp;
+            float frac = (float) j / band_size; // 平滑滤波
+            tmp = SQUARE(X[(eband5ms[i] << FRAME_SIZE_SHIFT) + j].r);  // 计算实部平方
+            tmp += SQUARE(X[(eband5ms[i] << FRAME_SIZE_SHIFT) + j].i); // 计算虚部平方
+            sum[i] += (1 - frac) * tmp; // 实际上这里每个sum[i]都计算了两遍(除了最初的和末尾的)
             sum[i + 1] += frac * tmp;
         }
     }
-    sum[0] *= 2;
-    sum[NB_BANDS - 1] *= 2;
+    sum[0] *= 2; // sum[0]没有计算两遍，这里需要补上
+    sum[NB_BANDS - 1] *= 2; // sum[NB_BANDS-1]没有计算两遍，这里需要补上
     for (i = 0; i < NB_BANDS; i++) {
         bandE[i] = sum[i];
     }
 }
 
+/*!
+ * 计算相关系数
+ * @param bandE
+ * @param X 傅里叶变换系数
+ * @param P 基音周期pitch傅里叶变换系数
+ */
 void compute_band_corr(float *bandE, const kiss_fft_cpx *X, const kiss_fft_cpx *P) {
     int i;
     float sum[NB_BANDS] = {0};
@@ -122,6 +135,11 @@ void compute_band_corr(float *bandE, const kiss_fft_cpx *X, const kiss_fft_cpx *
     }
 }
 
+/*!
+ * 插值增益
+ * @param g 插值后增益
+ * @param bandE 原始能量系数
+ */
 void interp_band_gain(float *g, const float *bandE) {
     int i;
     memset(g, 0, FREQ_SIZE);
@@ -155,7 +173,11 @@ static void check_init() {
     common.init = 1;
 }
 
-/* 离散余弦变换 */
+/*!
+ * 离散余弦变换
+ * @param out 输出变换后系数
+ * @param in 输入信号
+ */
 static void dct(float *out, const float *in) {
     int i;
     check_init();
@@ -184,6 +206,11 @@ static void idct(float *out, const float *in) {
 }
 #endif
 
+/*!
+ * 信号的傅里叶变换计算
+ * @param out FFT变换后系数
+ * @param in 加窗后的信号 2帧
+ */
 static void forward_transform(kiss_fft_cpx *out, const float *in) {
     int i;
     kiss_fft_cpx x[WINDOW_SIZE];
@@ -199,6 +226,11 @@ static void forward_transform(kiss_fft_cpx *out, const float *in) {
     }
 }
 
+/*!
+ * 信号的逆傅里叶变换计算
+ * @param out 逆序的输出IFFT结果
+ * @param in 傅里叶变换后的系数
+ */
 static void inverse_transform(float *out, const kiss_fft_cpx *in) {
     int i;
     kiss_fft_cpx x[WINDOW_SIZE];
@@ -218,7 +250,10 @@ static void inverse_transform(float *out, const kiss_fft_cpx *in) {
         out[i] = WINDOW_SIZE * y[WINDOW_SIZE - i].r;
     }
 }
-
+/*!
+ * 每次对2帧信号加窗
+ * @param x 加窗后的信号依然写入到x中
+ */
 static void apply_window(float *x) {
     int i;
     check_init();
@@ -267,22 +302,43 @@ int lowpass = FREQ_SIZE;
 int band_lp = NB_BANDS;
 #endif
 
-
+/*!
+ * 得到信号傅里叶系数及频带能量
+ * @param st DenoiseState结构体
+ * @param X 输入信号傅里叶变换得到的复数 数组长度 FREQ_SIZE = 481
+ * @param Ex 此帧各频带能量 数组长度 NB_BANDS = 22
+ * @param in 抑制电源干扰后的信号帧 数组长度 FRAME_SIZE = 480
+ */
 static void frame_analysis(DenoiseState *st, kiss_fft_cpx *X, float *Ex, const float *in) {
     int i;
-    float x[WINDOW_SIZE];
+    float x[WINDOW_SIZE]; // 两帧 size=960
+
+    // 两个RNN_COPY实现了滑动窗口
     RNN_COPY(x, st->analysis_mem, FRAME_SIZE);
     for (i = 0; i < FRAME_SIZE; i++) x[FRAME_SIZE + i] = in[i];
     RNN_COPY(st->analysis_mem, in, FRAME_SIZE);
-    apply_window(x);
-    forward_transform(X, x);
+
+    apply_window(x); // 加窗后的x
+    forward_transform(X, x); // X是x傅里叶变换后的系数
 #if TRAINING
     for (i=lowpass;i<FREQ_SIZE;i++)
       X[i].r = X[i].i = 0;
 #endif
-    compute_band_energy(Ex, X);
+    compute_band_energy(Ex, X); // 计算该帧各频带的能量
 }
 
+/*!
+ * 计算单帧的特征
+ * @param st DenoiseState结构体
+ * @param X 输入信号x傅里叶变换后的系数
+ * @param P 基音周期pitch傅里叶变换系数
+ * @param Ex 此帧各频带能量 数组长度 NB_BANDS = 22
+ * @param Ep 基音周期pitch的频带能量计算
+ * @param Exp 计算pitch时的相关系数
+ * @param features 各特征系数
+ * @param in 输入的单帧信号 数组长度 FRAME_SIZE=480
+ * @return 是否静音帧
+ */
 static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cpx *P,
                                   float *Ex, float *Ep, float *Exp, float *features, const float *in) {
     int i;
@@ -297,10 +353,11 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
     float *(pre[1]);
     float tmp[NB_BANDS];
     float follow, logMax;
-    frame_analysis(st, X, Ex, in);
+    frame_analysis(st, X, Ex, in); // 得到该帧in的傅里叶系数X和各频带能量Ex
     RNN_MOVE(st->pitch_buf, &st->pitch_buf[FRAME_SIZE], PITCH_BUF_SIZE - FRAME_SIZE);
     RNN_COPY(&st->pitch_buf[PITCH_BUF_SIZE - FRAME_SIZE], in, FRAME_SIZE);
     pre[0] = &st->pitch_buf[0];
+    // pitch估计方法来自opus 中的 pitch.c
     pitch_downsample(pre, pitch_buf, PITCH_BUF_SIZE, 1);
     pitch_search(pitch_buf + (PITCH_MAX_PERIOD >> 1), pitch_buf, PITCH_FRAME_SIZE,
                  PITCH_MAX_PERIOD - 3 * PITCH_MIN_PERIOD, &pitch_index);
@@ -315,13 +372,13 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
     apply_window(p);
     forward_transform(P, p);
     compute_band_energy(Ep, P);
-    compute_band_corr(Exp, X, P);
+    compute_band_corr(Exp, X, P); // 计算X和P的相关系数
     for (i = 0; i < NB_BANDS; i++) Exp[i] = Exp[i] / sqrt(.001 + Ex[i] * Ep[i]);
     dct(tmp, Exp);
-    for (i = 0; i < NB_DELTA_CEPS; i++) features[NB_BANDS + 2 * NB_DELTA_CEPS + i] = tmp[i];
-    features[NB_BANDS + 2 * NB_DELTA_CEPS] -= 1.3;
-    features[NB_BANDS + 2 * NB_DELTA_CEPS + 1] -= 0.9;
-    features[NB_BANDS + 3 * NB_DELTA_CEPS] = .01 * (pitch_index - 300);
+    for (i = 0; i < NB_DELTA_CEPS; i++) features[NB_BANDS + 2 * NB_DELTA_CEPS + i] = tmp[i]; // features[34,40)
+    features[NB_BANDS + 2 * NB_DELTA_CEPS] -= 1.3; // features[34]
+    features[NB_BANDS + 2 * NB_DELTA_CEPS + 1] -= 0.9; // features[35]
+    features[NB_BANDS + 3 * NB_DELTA_CEPS] = .01 * (pitch_index - 300); // features[40]
     logMax = -2;
     follow = -2;
     for (i = 0; i < NB_BANDS; i++) {
@@ -336,7 +393,7 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
         RNN_CLEAR(features, NB_FEATURES);
         return 1;
     }
-    dct(features, Ly);
+    dct(features, Ly);      // 计算features
     features[0] -= 12;
     features[1] -= 4;
     ceps_0 = st->cepstral_mem[st->memid];
@@ -345,9 +402,10 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
     for (i = 0; i < NB_BANDS; i++) ceps_0[i] = features[i];
     st->memid++;
     for (i = 0; i < NB_DELTA_CEPS; i++) {
-        features[i] = ceps_0[i] + ceps_1[i] + ceps_2[i];
-        features[NB_BANDS + i] = ceps_0[i] - ceps_2[i];
-        features[NB_BANDS + NB_DELTA_CEPS + i] = ceps_0[i] - 2 * ceps_1[i] + ceps_2[i];
+        features[i] = ceps_0[i] + ceps_1[i] + ceps_2[i]; // features[0,6)
+        features[NB_BANDS + i] = ceps_0[i] - ceps_2[i];  // features[22,28) 倒谱系数
+        features[NB_BANDS + NB_DELTA_CEPS + i] = ceps_0[i] - 2 * ceps_1[i] + ceps_2[i]; // features[28, 34] 二阶系数
+        // ceps_0[i] - 2 * ceps_1[i] + ceps_2[i] = (ceps_0[i] - ceps_1[i]) - (ceps_1[i] - ceps_2[i]) = 二阶系数
     }
     /* Spectral variability features. */
     if (st->memid == CEPS_MEM) st->memid = 0;
@@ -367,10 +425,17 @@ static int compute_frame_features(DenoiseState *st, kiss_fft_cpx *X, kiss_fft_cp
         }
         spec_variability += mindist;
     }
-    features[NB_BANDS + 3 * NB_DELTA_CEPS + 1] = spec_variability / CEPS_MEM - 2.1;
+    features[NB_BANDS + 3 * NB_DELTA_CEPS + 1] = spec_variability / CEPS_MEM - 2.1; // features[41] 特殊的非平稳值,用于检测语音
+
     return TRAINING && E < 0.1;
 }
 
+/*!
+ * 语音帧合成
+ * @param st DenoiseState结构体
+ * @param out 合成的语音帧
+ * @param y 该帧的傅里叶变换系数
+ */
 static void frame_synthesis(DenoiseState *st, float *out, const kiss_fft_cpx *y) {
     float x[WINDOW_SIZE];
     int i;
@@ -380,6 +445,18 @@ static void frame_synthesis(DenoiseState *st, float *out, const kiss_fft_cpx *y)
     RNN_COPY(st->synthesis_mem, &x[FRAME_SIZE], FRAME_SIZE);
 }
 
+/*!
+ * 二阶滤波器 无限脉冲响应滤波器 IIR ref:https://arachnoid.com/BiQuadDesigner/index.html
+ * Biquadractic Filter求解如下：
+ * y(n) = x(n) + b0*x(n-1) + b1*x(n-2) - a0*y(n-1) - a1*y(n-2) // 实际上x(n)的系数为1
+ * @param y 滤波后时域信号
+ * @param mem 计算biquad的中间过程 mem[1] = b1*x(n-2) - a1*y(n-2)
+ * mem[0] = b1*x(n-2) - a1*y(n-2) + b0*x(n-1) - a0*y(n-1)
+ * @param x 待滤波的时域信号
+ * @param b 系数b
+ * @param a 系数a
+ * @param N N点信号滤波
+ */
 static void biquad(float *y, float mem[2], const float *x, const float *b, const float *a, int N) {
     int i;
     for (i = 0; i < N; i++) {
@@ -392,6 +469,15 @@ static void biquad(float *y, float mem[2], const float *x, const float *b, const
     }
 }
 
+/*!
+ * 用于过滤pitch谐波之间的噪声
+ * @param X 信号帧的傅里叶变换系数
+ * @param P 基音周期pitch傅里叶变换系数
+ * @param Ex 此帧各频带能量 数组长度 NB_BANDS = 22
+ * @param Ep 基音周期pitch的频带能量计算
+ * @param Exp 计算pitch时的相关系数
+ * @param g 每个频带的增益 gain = sqrt(Energy(clean speech) / Energy(noisy speech)); 即 idea ratio mask(IRM)
+ */
 void pitch_filter(kiss_fft_cpx *X, const kiss_fft_cpx *P, const float *Ex, const float *Ep,
                   const float *Exp, const float *g) {
     int i;
@@ -430,10 +516,10 @@ void pitch_filter(kiss_fft_cpx *X, const kiss_fft_cpx *P, const float *Ex, const
 
 /*!
  *
- * @param st
- * @param out 输出帧
- * @param in 输入帧
- * @return
+ * @param st DenoiseState结构体
+ * @param out 输出帧数据
+ * @param in 输入帧数据
+ * @return vad_prob 语音活动检测范围(0,1), 0表示无话音
  */
 float rnnoise_process_frame(DenoiseState *st, float *out, const float *in) {
     int i;
@@ -449,17 +535,61 @@ float rnnoise_process_frame(DenoiseState *st, float *out, const float *in) {
     int silence;
     static const float a_hp[2] = {-1.99599, 0.99600};
     static const float b_hp[2] = {-2, 1};
-    biquad(x, st->mem_hp_x, in, b_hp, a_hp, FRAME_SIZE);
+    biquad(x, st->mem_hp_x, in, b_hp, a_hp, FRAME_SIZE); // high pass 高通滤波 抑制50Hz或60Hz的电源干扰
     silence = compute_frame_features(st, X, P, Ex, Ep, Exp, features, x);
 
-    if (!silence) {
+#ifdef SEENLI_DEBUG
+    FILE *fp_feature;
+    fp_feature = fopen("origin_feature.txt","a+");
+    if (fp_feature == NULL) {printf("origin_feature.txt failed to open. \n");}
+    else {
+        for (int feature_i = 0; feature_i < NB_FEATURES; feature_i++)
+            fprintf(fp_feature, "%8.3f", features[feature_i]);
+        fprintf(fp_feature, "\n");
+    }
+    fclose(fp_feature);
+#endif
+
+    if (!silence) { // 非静音帧
         compute_rnn(&st->rnn, g, &vad_prob, features);
+
+#ifdef SEENLI_DEBUG
+    FILE *fp_rnn_gain;
+    fp_rnn_gain = fopen("rnn_gains.txt", "a+");
+    if (fp_rnn_gain == NULL) {printf("rnn_gains.txt filed to open. \n");}
+    else {
+        for (int gain_i = 0; gain_i < NB_BANDS; gain_i++)
+            fprintf(fp_rnn_gain, "%8.3f", g[gain_i]);
+        fprintf(fp_feature, "\n");
+    }
+    fclose(fp_rnn_gain);
+
+    FILE *fp_vad;
+    fp_vad = fopen("vad.txt", "a+");
+    if (fp_vad == NULL) {printf("vad.txt filed to open. \n");}
+    else {
+        fprintf(fp_vad, "%.3f\n", vad_prob);
+    }
+    fclose(fp_vad);
+#endif
+
         pitch_filter(X, P, Ex, Ep, Exp, g);
         for (i = 0; i < NB_BANDS; i++) {
             float alpha = .6f;
             g[i] = MAX16(g[i], alpha * st->lastg[i]);
             st->lastg[i] = g[i];
         }
+#ifdef SEENLI_DEBUG
+        FILE *fp_filter_gain;
+        fp_filter_gain = fopen("pitch_filter_gains.txt", "a+");
+        if (fp_filter_gain == NULL) {printf("pitch_filter_gains.txt filed to open. \n");}
+        else {
+            for (int gain_i = 0; gain_i < NB_BANDS; gain_i++)
+                fprintf(fp_filter_gain, "%8.3f", g[gain_i]);
+            fprintf(fp_feature, "\n");
+        }
+        fclose(fp_filter_gain);
+#endif
         interp_band_gain(gf, g);
 #if 1
         for (i = 0; i < FREQ_SIZE; i++) {
@@ -468,6 +598,28 @@ float rnnoise_process_frame(DenoiseState *st, float *out, const float *in) {
         }
 #endif
     }
+#ifdef SEENLI_DEBUG
+    else { // 静音帧，实际在测试61-70968-0001_db20_babble-48k.pcm时没有静音帧
+        printf("进入静音帧...\n");
+        FILE *fp_gain;
+        fp_gain = fopen("gains.txt", "a+");
+        if (fp_gain == NULL) {printf("gains.txt filed to open. \n");}
+        else {
+            for (int gain_i = 0; gain_i < NB_BANDS; gain_i++)
+                fprintf(fp_gain, "%8.3f", .0); // 静音帧用0来填充gains
+            fprintf(fp_feature, "\n");
+        }
+        fclose(fp_gain);
+
+        FILE *fp_vad;
+        fp_vad = fopen("vad.txt", "a+");
+        if (fp_vad == NULL) {printf("vad.txt filed to open. \n");}
+        else {
+            fprintf(fp_vad, "%.3f\n", .0); // 静音帧用0来填充vad
+        }
+        fclose(fp_vad);
+    }
+#endif
 
     frame_synthesis(st, out, X);
     return vad_prob;
