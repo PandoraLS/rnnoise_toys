@@ -9,5 +9,5 @@
 
 调试命令
 ```shell
-rnnoise_toys D:\code\rnnoise_toys\denoise_examples\61-70968-0001_db20_babble-48k.pcm D:\code\rnnoise_toys\denoise_examples\61-70968-0001_db20_babble-48k-denoise.pcm
+rnnoise_toys C:\Education\code\rnnoise_toys\denoise_examples\61-70968-0001_db20_babble-48k.pcm C:\Education\code\rnnoise_toys\denoise_examples\61-70968-0001_db20_babble-48k-denoise.pcm
 ```
