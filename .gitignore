@@ -52,6 +52,9 @@ Mkfile.old
 dkms.conf
 
 
-# 文件夹
+# 文件夹与文件
 .idea/
 cmake-build-debug/
+src/training.f32
+training/training.h5
+

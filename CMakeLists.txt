@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.19)
+cmake_minimum_required(VERSION 3.16)
 project(rnnoise_toys C)
 
 set(CMAKE_C_STANDARD 11)
@@ -28,3 +28,5 @@ add_executable(rnnoise_toys
         src/denoise.c
         src/utils.c
         src/utils.h)
+
+target_link_libraries(rnnoise_toys m)
