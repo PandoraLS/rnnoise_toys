@@ -6,4 +6,8 @@ REFERENCE	 DEGRADED	 PESQMOS	 PESQMOS	 SUBJMOS	 COND	 SAMPLE_FREQ	 CRUDE_DELAY
  61-70968-0001_48k.pcm	 61-70968-0001_db20_babble-48k-denoise.pcm	 SQValue=3.509	 3.509	 0.000	 0	 16000	0.0000
  61-70968-0001_48k.pcm	 61-70968-0001_db20_babble-48k-denoise.pcm	 SQValue=3.509	 3.509	 0.000	 0	 16000	0.0000
  61-70968-0001_48k.pcm	 61-70968-0001_db20_babble-48k.pcm	 SQValue=3.481	 3.481	 0.000	 0	 16000	0.0000
+ 19-198-0002-48k-clean.wav	 19-198-0002-48k-db20-babble.wav	 SQValue=3.507	 3.507	 0.000	 0	 16000	0.0000
+ 19-198-0002-48k-clean.wav	 19-198-0002-48k-db20-babble.wav	 SQValue=3.507	 3.507	 0.000	 0	 16000	0.0000
+ 19-198-0002-16k-clean.wav	 19-198-0002-16k-db20-babble.wav	 SQValue=3.411	 3.411	 0.000	 0	 16000	0.0000
+ 19-198-0002-48k-clean.wav	 19-198-0002-48k-db20-babble-denoise.wav	 SQValue=3.567	 3.567	 0.000	 0	 16000	0.0000
  
