@@ -57,4 +57,4 @@ dkms.conf
 cmake-build-debug/
 src/training.f32
 training/training.h5
-
+training/weights.hdf5

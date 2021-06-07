@@ -38,9 +38,10 @@ cd src # 进入src/文件夹
 cd ../training # 进入training/ 文件夹
 python bin2hdf5.py ../src/training.f32 500000 87 training.h5 # 将training.f32 转换为 training.h5
 
-python rnn_train.py # 训练模型, 训练好的模型保存到 weights.hf5 
+python rnn_train.py # 训练模型, 训练好的模型保存到 training/weights.hf5 
 
-python dump_rnn.py weights.hdf5 ../src/rnn_data.c ../src/rnn_data.h # 将模型参数写入到rnn_data.c和rnn_data.h中
+python dump_rnn.py weights.hdf5 ../src/rnn_data.c ../src/rnn_data_tmp.h orig
+# 将模型参数写入到rnn_data.c和rnn_data.h中 最后一个参数 orig 是rnn_data.c 最后的结构体名字
 ```
 
 
@@ -57,3 +58,5 @@ python dump_rnn.py weights.hdf5 ../src/rnn_data.c ../src/rnn_data.h # 将模型�
 ```shell
 rnnoise_toys C:\Education\code\rnnoise_toys\denoise_examples\61-70968-0001_db20_babble-48k.pcm C:\Education\code\rnnoise_toys\denoise_examples\61-70968-0001_db20_babble-48k-denoise.pcm
 ```
+## TODO
+当训练模型很糟糕的时候, 算法倾向于抹去所有的音频, 基本听不到声音的那种状态,目前仍在探索这方面的内容

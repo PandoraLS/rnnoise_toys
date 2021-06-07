@@ -1,3 +1,6 @@
+"""
+将得到的 training.f32
+"""
 
 from __future__ import print_function
 
