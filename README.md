@@ -1,14 +1,22 @@
 # rnnoise_toys
 
+ref: [xiph/rnnoise](https://github.com/xiph/rnnoise)
+
 RNNoise is a noise suppression library based on a recurrent neural network.
 
-To compile, just type:
-% ./autogen.sh
-% ./configure
-% make
+## compile and make (Autotools 工作方式)
+To compile, 只需输入以下命令
+```shell script
+./autogen.sh
+./configure
+make
+```
 
-Optionally:
-% make install
+Optionally
+```shell script
+make install
+```
+
 
 While it is meant to be used as a library, a simple command-line tool is
 provided as an example. It operates on RAW 16-bit (machine endian) mono
