@@ -1,11 +1,33 @@
 # rnnoise_toys
 
-ref: [xiph/rnnoise](https://github.com/xiph/rnnoise)
-
 RNNoise is a noise suppression library based on a recurrent neural network.
 
-## compile and make (Autotools 工作方式)
-To compile, 只需输入以下命令
+ref: [xiph/rnnoise](https://github.com/xiph/rnnoise)
+
+工作平台: ubuntu 16.04, IDE: Clion (注意配置complier: Files -> Settings -> Build,Execution,Deployment -> Toolchains)
+
+## Debug (CMake)
+PS: 也可以在windows平台进行debug
+
+基于已经训练好的rnn调试C语言代码,rnn的参数已经写入到了`src/rnn_data.c`中
+1) 载入CMakeLists.txt: 打开项目自动载入项目 (如果没有载入项目,则 File -> Reload CMake Project)
+2) 项目Debug的 Program arguments 中填入 `noisy_pcm_path denoised_pcm_path`, 保险起见, 可填绝对路径, 就可以断点调试了
+
+## 训练并使用自己的模型 (demo例子)
+自行安装keras环境(cpu或gpu版本均可), 可以安装cpu版本的keras将此demo迅速实现
+
+### 准备训练数据
+speech: [McGill TSP speech database](http://www-mmsp.ece.mcgill.ca/Documents/Data/) 下载`48k.zip`
+
+noise: [noisex92](http://spib.linse.ufsc.br/noise.html) 这里使用Cockpit Noise 3 (F-16) 
+
+由于噪声数据是16k采样率,所以需要预先升采样到48k
+```shell script
+
+```
+
+## easy compile and make (Autotools)
+比较简单的 compile 和 make 方法 , 会产生一些 dirty files (原README)
 ```shell script
 ./autogen.sh
 ./configure
@@ -17,12 +39,14 @@ Optionally
 make install
 ```
 
-
 While it is meant to be used as a library, a simple command-line tool is
 provided as an example. It operates on RAW 16-bit (machine endian) mono
 PCM files sampled at 48 kHz. It can be used as:
 
+```shell script
 ./examples/rnnoise_demo <noisy speech> <output denoised>
+```
+
 
 The output is also a 16-bit raw PCM file.
 

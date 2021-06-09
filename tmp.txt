@@ -14,3 +14,6 @@ sox snr20+FA_test_merge+f16-48k.wav --bits 16 --encoding signed-integer --endian
 ./rnnoise_toys /home/lisen/lisen/dataset/rnnoise_datasets/snr20+FA_test_merge+f16-48k.raw /home/lisen/lisen/dataset/rnnoise_datasets/snr20+FA_test_merge+f16-48k_denoise.raw
 
 
+./rnnoise_toys /home/lisen/lisen/dataset/rnnoise_datasets/snr20+FA_test_merge+f16-48k.raw /home/lisen/lisen/dataset/rnnoise_datasets/snr20+FA_test_merge+f16-48k_denoise_2014.raw
+
+
