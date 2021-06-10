@@ -11,7 +11,10 @@ PS: 也可以在windows平台进行debug
 
 基于已经训练好的rnn调试C语言代码,rnn的参数已经写入到了`src/rnn_data.c`中
 1) 载入CMakeLists.txt: 打开项目自动载入项目 (如果没有载入项目,则 File -> Reload CMake Project)
-2) 项目Debug的 Program arguments 中填入 `noisy_pcm_path denoised_pcm_path`, 保险起见, 可填绝对路径, 就可以断点调试了
+2) 项目Debug的 Program arguments 中填入 带噪语音路径和增强后语音路径, 就可以断点调试了
+```shell script
+/home/xxx/examples/noisy.pcm /home/xxx/examples/noisy-denoised.pcm 
+```
 
 在linux下会在`cmake-build-debug/`文件夹下有一个`rnnoise_toys`可执行文件, 在windows下会在`cmake-build-debug/`文件夹下有一个`rnnoise_toys.exe`可执行文件, 
 
@@ -42,9 +45,9 @@ sox joinedFile_noise.wav --bits 16 --encoding signed-integer --endian little noi
 cd src # 进入src/文件夹
 ./compile.sh # 在src/下生成 denoise_training 可执行文件(用于根据clean.raw和noise.raw生成训练集)
 
-./denoise_training signal.raw noise.raw count > training.f32  # (note the matrix size and replace 500000 87 below)
+./denoise_training signal.raw noise.raw 500000 > training.f32  # (note the matrix size and replace 500000 87 below)
 # 根据原始信号生成training.f32, signal.raw是干净语音  noise.raw是噪声,
-# count 表示的是生成多少训练样本 500000 够用, 当然也可以设置小一些(50000)或大一些(5000000)
+# 第三个参数表示的是生成多少训练样本, 500000够用, 当然也可以设置小一些(50000)或大一些(5000000)
 
 cd ../training # 进入training/ 文件夹
 python bin2hdf5.py ../src/training.f32 500000 87 training.h5 # 将training.f32 转换为 training.h5
@@ -56,7 +59,7 @@ python rnn_train.py # 训练模型, 训练好的模型会被保存到 training/w
 ```shell script
 python dump_rnn.py weights.hdf5 ../src/rnn_data.c ../src/rnn_data.rnnn orig # 读取模型并将参数打包处理
 # 将模型参数写入到rnn_data.c和rnn_data.rnnn中 最后一个参数orig是当前训练模型的名称, 对应rnn_data.c最后的结构体名字(可以随意起名)
-# rnn_data.c的是封装为数组的模型参数 rnn_data.rnnn中存储的是纯参数(rnn_data.rnnn暂时用不到) 
+# rnn_data.c的是封装为数组的模型参数, rnn_data.rnnn中存储的是纯参数(rnn_data.rnnn暂时用不到) 
 # rnn_data.rnnn 这种格式参考 https://github.com/GregorR/rnnoise-models/blob/master/beguiling-drafter-2018-08-30/bd.rnnn
 ```
 
