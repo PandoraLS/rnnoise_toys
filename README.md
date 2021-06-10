@@ -85,6 +85,11 @@ make install
 
 The output is also a 16-bit raw PCM file.
 
+清理compile和make过程中产生的dirty files
+```shell script
+sh clean.sh
+```
+
 The latest version of the source is available from
 https://gitlab.xiph.org/xiph/rnnoise .  The github repository
 is a convenience copy.
