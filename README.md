@@ -63,7 +63,7 @@ python dump_rnn.py weights.hdf5 ../src/rnn_data.c ../src/rnn_data.rnnn orig # �
 # rnn_data.rnnn 这种格式参考 https://github.com/GregorR/rnnoise-models/blob/master/beguiling-drafter-2018-08-30/bd.rnnn
 ```
 
-接下来就可以使用自己训练出的模型参数了, 已经训练好的FA+f16的模型在`training_model/TSP-FA+f16/`文件夹下,如需使用则需用`training_model/TSP-FA+f16/rnn_data.c`替换掉`src/rnn_data.c`即可
+接下来就可以使用自己训练出的模型参数了, 已经训练好的FA+f16的模型在`training_model/TSP-FA+f16/`文件夹下,如需使用则用`training_model/TSP-FA+f16/rnn_data.c`把`src/rnn_data.c`替换掉即可
 
 ## easy compile and make (Autotools)
 以下是比较简单的 compile 和 make 方法 , 会产生一些 dirty files (原README). 
