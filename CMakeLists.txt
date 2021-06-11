@@ -25,8 +25,6 @@ add_executable(rnnoise_toys
         src/rnn_data.h
         src/rnn_reader.c
         src/tansig_table.h
-        src/denoise.c
-        src/utils.c
-        src/utils.h)
+        src/denoise.c)
 
 target_link_libraries(rnnoise_toys m)

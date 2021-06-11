@@ -2,8 +2,6 @@
 // Created by aone on 2021/5/10.
 //
 
-#define SEENLI_DEBUG
-
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -538,58 +536,14 @@ float rnnoise_process_frame(DenoiseState *st, float *out, const float *in) {
     biquad(x, st->mem_hp_x, in, b_hp, a_hp, FRAME_SIZE); // high pass 高通滤波 抑制50Hz或60Hz的电源干扰
     silence = compute_frame_features(st, X, P, Ex, Ep, Exp, features, x);
 
-#ifdef SEENLI_DEBUG
-    FILE *fp_feature;
-    fp_feature = fopen("origin_feature.txt","a+");
-    if (fp_feature == NULL) {printf("origin_feature.txt failed to open. \n");}
-    else {
-        for (int feature_i = 0; feature_i < NB_FEATURES; feature_i++)
-            fprintf(fp_feature, "%8.3f", features[feature_i]);
-        fprintf(fp_feature, "\n");
-    }
-    fclose(fp_feature);
-#endif
-
     if (!silence) { // 非静音帧
         compute_rnn(&st->rnn, g, &vad_prob, features);
-
-#ifdef SEENLI_DEBUG
-    FILE *fp_rnn_gain;
-    fp_rnn_gain = fopen("rnn_gains.txt", "a+");
-    if (fp_rnn_gain == NULL) {printf("rnn_gains.txt filed to open. \n");}
-    else {
-        for (int gain_i = 0; gain_i < NB_BANDS; gain_i++)
-            fprintf(fp_rnn_gain, "%8.3f", g[gain_i]);
-        fprintf(fp_feature, "\n");
-    }
-    fclose(fp_rnn_gain);
-
-    FILE *fp_vad;
-    fp_vad = fopen("vad.txt", "a+");
-    if (fp_vad == NULL) {printf("vad.txt filed to open. \n");}
-    else {
-        fprintf(fp_vad, "%.3f\n", vad_prob);
-    }
-    fclose(fp_vad);
-#endif
-
         pitch_filter(X, P, Ex, Ep, Exp, g);
         for (i = 0; i < NB_BANDS; i++) {
             float alpha = .6f;
             g[i] = MAX16(g[i], alpha * st->lastg[i]);
             st->lastg[i] = g[i];
         }
-#ifdef SEENLI_DEBUG
-        FILE *fp_filter_gain;
-        fp_filter_gain = fopen("pitch_filter_gains.txt", "a+");
-        if (fp_filter_gain == NULL) {printf("pitch_filter_gains.txt filed to open. \n");}
-        else {
-            for (int gain_i = 0; gain_i < NB_BANDS; gain_i++)
-                fprintf(fp_filter_gain, "%8.3f", g[gain_i]);
-            fprintf(fp_feature, "\n");
-        }
-        fclose(fp_filter_gain);
-#endif
         interp_band_gain(gf, g);
 #if 1
         for (i = 0; i < FREQ_SIZE; i++) {
@@ -598,29 +552,6 @@ float rnnoise_process_frame(DenoiseState *st, float *out, const float *in) {
         }
 #endif
     }
-#ifdef SEENLI_DEBUG
-    else { // 静音帧，实际在测试61-70968-0001_db20_babble-48k.pcm时没有静音帧
-        printf("进入静音帧...\n");
-        FILE *fp_gain;
-        fp_gain = fopen("gains.txt", "a+");
-        if (fp_gain == NULL) {printf("gains.txt filed to open. \n");}
-        else {
-            for (int gain_i = 0; gain_i < NB_BANDS; gain_i++)
-                fprintf(fp_gain, "%8.3f", .0); // 静音帧用0来填充gains
-            fprintf(fp_feature, "\n");
-        }
-        fclose(fp_gain);
-
-        FILE *fp_vad;
-        fp_vad = fopen("vad.txt", "a+");
-        if (fp_vad == NULL) {printf("vad.txt filed to open. \n");}
-        else {
-            fprintf(fp_vad, "%.3f\n", .0); // 静音帧用0来填充vad
-        }
-        fclose(fp_vad);
-    }
-#endif
-
     frame_synthesis(st, out, X);
     return vad_prob;
 }

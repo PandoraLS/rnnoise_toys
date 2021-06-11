@@ -31,6 +31,8 @@
    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+// [1] Markel, J. (1972). The SIFT algorithm for fundamental frequency estimation. IEEE Transactions on Audio and Electroacoustics, 20(5), 367-377.
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
